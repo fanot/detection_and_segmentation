@@ -4,11 +4,11 @@
 This project implements a system for segmentation and detection of abnormal clods that can form during the processing of rock in the coal industry. In order to make sure that the mechanism that processes the breed is working correctly.
 
 Here you can see a fragment of the video with tracking processed by the system:
-![](./outputs/2024-04-21 19-14-53.gif)
+![](outputs/2024-04-21 19-14-53.gif)
 
 ## Models
 
-The project uses two types of models: [Ultralytics YOLOv8](https://ultralytics.com/yolov8 ) (fully operational with tracking) and [U-Net](the model was implemented from scratch)
+The project uses two types of models: [Ultralytics YOLOv8](https://ultralytics.com/yolov8 ) (fully operational with tracking) and U-Net(the model was implemented from scratch)
 
 ##  Installation
  Run following command in shell:\
