@@ -3,15 +3,13 @@ import cv2
 import moviepy
 import shutil
 import numpy as np
-import ultralytics
 import moviepy.video.io.ImageSequenceClip
-from ultralytics import YOLO
 from matplotlib import image as img
 from matplotlib import pyplot as plt
 from os import listdir
 from os.path import isfile, join
 from datetime import datetime
-import src.models.UnetModel
+from src.models.ObjectTracking import ObjectTracker
 from src.models.UnetModel import UnetModel
 from src.models.YoloModel import YoloModel
 import fire
@@ -19,7 +17,8 @@ import torch, gc
 from src.logger import logger
 
 
-class ODaSModel:
+
+class My_segmentation_model:
     """
     Object detection and segmentation system class
     """
@@ -27,8 +26,11 @@ class ODaSModel:
     def __init__(self):
         logger.info('started ODaSModel instance init')
         self.model = None
+        self.tracker = ObjectTracker()
         logger.info('finished ODaSModel instance init')
         self.total_clouds = 0
+        self.cloud_counter = 0  # Initialize cloud counter
+
     def setup_env(self):
         """Method that setup environment for further work of system
 
@@ -243,7 +245,7 @@ class ODaSModel:
                 buf = self.__apply_sharpen(buf, sharp_cyc)
 
             if not prod:
-                cv2.putText(buf,'B:{},C:{}'.format(brightness,contrast),(10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                cv2.putText(buf,'B:{},C:{}'.format(brightness,contrast),(10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
             if resize:
                 buf = cv2.resize(buf, (int(os.environ['IMAGE_SIZE']), int(os.environ['IMAGE_SIZE'])), interpolation = cv2.INTER_AREA)
@@ -271,8 +273,7 @@ class ODaSModel:
         for i in range(n):
             sharp_image=cv2.filter2D(sharp_image, -1, sharpen_filter)
 
-        # another way
-        #     unsharped = cv2.addWeighted(img, 1.5, smoothed, -0.5, 0)
+
         logger.info('successfully sharpen image')
         return sharp_image
 
@@ -308,16 +309,6 @@ class ODaSModel:
     def __map(self, x, in_min, in_max, out_min, out_max):
         return int((x-in_min) * (out_max-out_min) / (in_max-in_min) + out_min)
 
-    # def proceed_video(self, path_to_video, change_video=True):
-    #     logger.info('started proceed_video method')
-    #     self.__split_video_into_frames(path_to_video)
-    #     if change_video:
-    #         self.__change_frames()
-    #
-    #     # predict
-    #     self.__convert_frames_into_video(change_video)
-    #     self.clear_cache()
-    #     logger.info('proceed_video method successfully executed')
 
     def __get_dataset_yaml_file(self, path_to_dataset):
         """Method that load .yaml file from folder
@@ -481,7 +472,7 @@ class ODaSModel:
         if path_to_dataset is None:
             path_to_dataset = os.environ['PROCESSED_FRAMES_FOLDER']
         if model_type == 'YOLO':
-            self.model.predict(source=path_to_dataset, task=os.environ['TASK_TYPE'], save=True, save_txt=True, stream=True) #device='cpu'
+            self.model.predict(source=path_to_dataset, task=os.environ['TASK_TYPE'], save=True, save_txt=True, stream=True)
         elif model_type == 'UNET':
             pass
         else:
@@ -609,15 +600,15 @@ class ODaSModel:
             self.__add_markup(markup)
         logger.info('__add_markups method successfully executed')
 
-
     def __add_markup(self, markup, stream=False):
-        """Method that add markup to image from it's description
+        """Method that adds markup to an image from its description.
 
         Parameters
         ----------
-
-        markup: dict. Markup information for the image.
-        stream: bool (default: False). Is function called from stream.
+        markup : dict
+            Markup information for the image.
+        stream : bool, optional
+            Whether the function is called from a stream (default is False).
         """
         logger.info(f"started __add_markup method {markup['image_path']}")
         dpi = 10
@@ -634,22 +625,25 @@ class ODaSModel:
         ax = plt.Axes(fig, [0., 0., 1., 1.])
         ax.set_axis_off()
         fig.add_axes(ax)
-        self.total_clouds += markup['num_of_units']
 
+        # Adding text with yellow color
         ax.text(270, 50,
-                f"biggest size: {round(markup['max_square'], 1)} pixels\nNumber of rocks: {markup['num_of_units'], self.total_clouds}\n",
-                color="white",
+                f"biggest size: {round(markup['max_square'], 1)} pixels\nNumber of rocks: {markup['num_of_units']}\n",
+                color="yellow",
                 horizontalalignment='center',
                 verticalalignment='center')
-        ax.plot(x, y, color="white", linewidth=2)
+
+        # Drawing a line with red color
+        ax.plot(x, y, color="blue", linewidth=2)
         ax.imshow(data, aspect='auto')
-        # Iterate over detected objects and add their numbers to the markup
+
+        # Adding white labels for detected objects (kept the same)
         for obj in markup['detected_objects']:
             x = obj['x_coords']
             y = obj['y_coords']
             num = obj['index']
-            ax.plot(x, y, color="white", linewidth=2)
             ax.text(x.mean(), y.mean(), str(num), color="white", fontsize=8, ha='center', va='center')
+
         fig.savefig(markup['image_path'], dpi=dpi * 10)
         logger.info('__add_markup method successfully executed')
 
@@ -694,26 +688,104 @@ class ODaSModel:
         self.clear_cache()
         logger.info(f"predict_video method successfully executed")
 
-    def realtime_detection(self, path_to_video: str, process: bool = True, model_type: str = 'YOLO',
-                           use_default_model: bool = False, model_path: str = None):
-        """
-        Method that gets a video file as input and starts streaming object detection and segmentation on the video.
-
-        Parameters:
-            path_to_video: str. Path to the video file.
-            process: bool (default: True). If true, the model will apply brightness, contrast, and sharpness adjustments to every frame of the video.
-            model_type: str (default: 'YOLO'). Model type name to be used; currently possible values are 'YOLO' or 'UNET'.
-            use_default_model: bool (default: False). If true, the model will use the standard pretrained YOLO model; otherwise, it will use a custom model specially trained for the given task.
-            model_path: str (default: None). Path to the YOLO model to be used in evaluation. If a value is provided, the use_default_model parameter has no effect.
-
-        Returns:
-            None
-        """
-        logger.info(f"Started realtime_detection method")
+    def realtime_detection_tracking(self, path_to_video: str, process: bool = True, model_type: str = 'YOLO',
+                                    use_default_model: bool = False, model_path: str = None):
+        logger.info(f"started realtime_detection method")
         if path_to_video is None:
             path_to_video = os.environ['PATH_TO_VIDEO']
 
-        capture = cv2.VideoCapture(path_to_video)
+        capture = self.__get_capture(path_to_video)
+
+        if model_path is not None:
+            self.load_model(model_type, model_path=model_path)
+        elif self.model is None:
+            self.load_model(model_type, use_default_model, model_path)
+        total_clouds_count = 0  # Переменная для отслеживания общего количества облаков
+        cloud_id_mapping = {}  # Словарь для отслеживания номеров облаков
+
+        # Создаем отдельный экземпляр трекера для каждого запуска
+        tracker = ObjectTracker()
+
+        try:
+            while capture.isOpened():
+                ret, frame = capture.read()
+                if not ret:
+                    logger.info("No frame to read or end of video reached")
+                    break
+
+                if process:
+                    # Применяем функции коррекции изображения, если включен режим обработки
+                    frame = self.__apply_brightness_contrast_sharpening(frame,
+                                                                        int(os.environ['CONVERT_BRIGHTNESS']) + 255,
+                                                                        int(os.environ['CONVERT_CONTRAST']) + 127,
+                                                                        int(os.environ['CONVERT_SHARPENING_CYCLE']),
+                                                                        prod=True, process=process, resize=False)
+
+                # Сохраняем обработанный кадр для дальнейшей обработки моделью
+                cv2.imwrite(os.environ['TEMP_IMAGE_FILE'], frame)
+                self.__predict_dataset(os.environ['TEMP_IMAGE_FILE'], model_type)
+
+                # Обработка результатов распознавания и трекинг
+                if os.path.exists(os.environ['TEMP_LABEL_FILE']):
+                    markup = self.__handle_file(os.environ['TEMP_LABEL_FILE'], stream=True)
+                    markup['image_path'] = os.environ['PREDICTED_IMAGE_PATH']
+                    os.remove(os.environ['TEMP_LABEL_FILE'])
+                    self.__add_markup(markup, True)
+
+                    detected_objects = markup['detected_objects']
+                    tracker.start_tracking(frame, detected_objects)  # Передаем обнаруженные объекты в трекер
+
+                # Обновление трекеров и отрисовка результатов
+                updated_trackers = tracker.update_tracking(frame)
+                for tracker_id, bbox, cloud_id in updated_trackers:
+                    if cloud_id not in cloud_id_mapping:
+                        total_clouds_count += 1
+                        cloud_id_mapping[cloud_id] = total_clouds_count
+                    cv2.rectangle(frame, (int(bbox[0]), int(bbox[1])), (int(bbox[0] + bbox[2]), int(bbox[1] + bbox[3])),
+                                  (0, 255, 0), 2)
+                    cv2.putText(frame, f'Cloud {cloud_id_mapping[cloud_id]}', (int(bbox[0]), int(bbox[1]) - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+                # Отображаем счетчик трекинга
+                cv2.putText(frame, f'Tracking Count: {tracker.tracking_counter}', (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1,
+                            (0, 255, 0), 2)
+
+                cv2.imshow('Frame', frame)
+                if cv2.waitKey(25) & 0xFF == ord('q'):
+                    logger.info("Real-time detection stopped by user.")
+                    break
+
+        finally:
+            capture.release()
+            cv2.destroyAllWindows()
+            logger.info("Realtime detection method finished")
+            logger.info(f"Total number of clouds detected: {total_clouds_count}")
+
+            # Добавляем текст с общим количеством облаков в последний кадр
+            last_frame = cv2.imread(os.environ['TEMP_IMAGE_FILE'])
+            cv2.putText(last_frame, f'Total Clouds: {total_clouds_count}', (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1,
+                        (0, 255, 0), 2)
+            cv2.imwrite(os.environ['TEMP_IMAGE_FILE'], last_frame)
+
+    def realtime_detection(self, path_to_video: str, process: bool = True, model_type: str = 'YOLO', use_default_model: bool = False, model_path: str = None):
+        """
+        Method that get video file as input and start stream on object detection and segmentation on video.
+
+        Parameters:
+            video: str; by default: None. Path to video file which model will use in detection and segmentation.  If None model will use standart saved video.
+            model_type: str; be default: 'YOLO'. Model type name which model will user, current possible values are 'YOLO' or 'UNET'.
+            process: bool; by default: True. If true model will add brighness, contrast and sharpness to every frame of the given video, else model won't change frames
+            use_default_model: bool; by default: False. If true model will use standart pretrained YOLO model, else will use custom model specially trained for given task.
+            model_path: str; by default: None. Path to YOLO model which will use in evaluation. If value is presented then use_default_model parameter has no effect
+
+        return: return nothing
+        """
+
+        logger.info(f"started realtime_detection method")
+        if path_to_video is None:
+            path_to_video = os.environ['PATH_TO_VIDEO']
+
+        capture = self.__get_capture(path_to_video)
 
         if model_path is not None:
             self.load_model(model_type, model_path=model_path)
@@ -726,34 +798,36 @@ class ODaSModel:
             ret, frame = capture.read()
             if ret:
                 if process:
-                    frame = self.__apply_brightness_contrast_sharpening(frame,
-                                                                        int(os.environ['CONVERT_BRIGHTNESS']) + 255,
-                                                                        int(os.environ['CONVERT_CONTRAST']) + 127,
-                                                                        int(os.environ['CONVERT_SHARPENING_CYCLE']),
-                                                                        prod=True,
-                                                                        process=process, resize=False)
+                    frame = self.__apply_brightness_contrast_sharpening(frame, int(os.environ['CONVERT_BRIGHTNESS']) + 255,
+                                                                      int(os.environ['CONVERT_CONTRAST']) + 127,
+                                                                      int(os.environ['CONVERT_SHARPENING_CYCLE']),
+                                                                      prod=True,
+                                                                      process=process, resize=False)
                 cv2.imwrite(os.environ['TEMP_IMAGE_FILE'], frame)
-                markup = self.__handle_file(os.environ['TEMP_LABEL_FILE'], stream=True)
-                markup['image_path'] = os.environ['PREDICTED_IMAGE_PATH']
-                # self.total_clouds += markup['num_of_units']  # Increment total_clouds counter
-                self.__add_markup(markup, True)
+                self.__predict_dataset(os.environ['TEMP_IMAGE_FILE'], model_type)
+                print('temp im fil', os.environ['TEMP_LABEL_FILE'])
+                if os.path.exists(os.environ['TEMP_LABEL_FILE']):
+                    print('exist')
+                    markup = self.__handle_file(os.environ['TEMP_LABEL_FILE'], stream=True)
+                    markup['image_path'] = os.environ['PREDICTED_IMAGE_PATH']
+                    os.remove(os.environ['TEMP_LABEL_FILE'])
+                    self.__add_markup(markup, True)
 
                 image = cv2.imread(os.environ['PREDICTED_IMAGE_PATH'], cv2.IMREAD_COLOR)
+                gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-                # Add total number of clouds to the frame
-                # cv2.putText(image, f'Total clouds: {self.total_clouds}', (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
-
-                cv2.imshow('Frame', image)
-                # Add waitKey for the video to display
+                cv2.imshow('Frame', gray_image)
+                # add waitKey for video to display
                 cv2.waitKey(1)
                 if cv2.waitKey(25) == ord('q'):
-                    # Do not close the window; you want to show the frame
+                    # do not close window, you want to show the frame
+                    # cv2.destroyAllWindows();
                     cv2.destroyAllWindows()
                     self.clear_cache()
-                    logger.info(f"Realtime_detection method finished by user")
+                    logger.info(f"realtime_detection method finished by user")
                     break
             else:
-                logger.info(f"Realtime_detection detected all images")
+                logger.info(f"realtime_detection detected all images")
                 break
 
 class CliWrapper(object):
@@ -763,7 +837,7 @@ class CliWrapper(object):
     """
 
     def __init__(self):
-        self.segmentator = ODaSModel()
+        self.segmentator = My_segmentation_model()
         self.segmentator.setup_env()
         logger.info(f"CliWrapper object inited")
 
@@ -820,23 +894,31 @@ class CliWrapper(object):
         print(f"Video saved to {os.environ['OUTPUT_FOLDER']}")
         logger.info(f"Video saved to {os.environ['OUTPUT_FOLDER']}")
 
-    def demo(self, video: str = None, model_type: str = 'YOLO', process: bool = True, use_default_model: bool = False, model_path: str = None):
+    def demo(self, video: str = None, model_type: str = 'YOLO', process: bool = True, use_default_model: bool = False,
+             model_path: str = None, tracking: bool = False):
         """
         Method that get video file as input and start stream on object detection and segmentation on video.
+        If 'tracking' is set to True, the function will also include object tracking.
 
         Parameters:
-            video: str; by default: None. Path to video file which model will use in detection and segmentation.  If None model will use standart saved video.
-            model_type: str; be default: 'YOLO'. Model type name which model will user, current possible values are 'YOLO' or 'UNET'.
-            process: bool; by default: True. If true model will add brighness, contrast and sharpness to every frame of the given video, else model won't change frames
-            use_default_model: bool; by default: False. If true model will use standart pretrained YOLO model, else will use custom model specially trained for given task.
-            model_path: str; by default: None. Path to YOLO model which will use in evaluation. If value is presented then use_default_model parameter has no effect
+            video: str; by default: None. Path to video file which model will use in detection and segmentation.  If None model will use standard saved video.
+            model_type: str; by default: 'YOLO'. Model type name which model will user, current possible values are 'YOLO' or 'UNET'.
+            process: bool; by default: True. If true, model will add brightness, contrast, and sharpness to every frame of the given video, else model won't change frames
+            use_default_model: bool; by default: False. If true, model will use standard pretrained YOLO model, else will use custom model specially trained for given task.
+            model_path: str; by default: None. Path to YOLO model which will be used in evaluation. If value is presented then use_default_model parameter has no effect.
+            tracking: bool; by default: False. If true, the function includes object tracking in the real-time detection.
 
         return: return nothing
         """
 
-        self.segmentator.realtime_detection(video, process, model_type, use_default_model, model_path)
+        if tracking:
+            # Assuming realtime_detection_tracking is a method that includes object tracking
+            self.segmentator.realtime_detection_tracking(video, process, model_type, use_default_model, model_path)
+        else:
+            self.segmentator.realtime_detection(video, process, model_type, use_default_model, model_path)
+
         self.segmentator.clear_cache()
-        logger.info(f"Demo finished")
+        logger.info("Demo finished")
 
     def load(self, model_type: str = 'YOLO', model_path: str = None, use_default_model: bool = False):
         self.segmentator.setup_env()
