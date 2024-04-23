@@ -1,10 +1,14 @@
     
 # Object Detection and Segmentation
-
-This project implements a system for segmentation and detection of abnormal clods that can form during the processing of rock in the coal industry. In order to make sure that the mechanism that processes the breed is working correctly.
+### Task
+It is a real-life industry task. [This video](https://homeassistant.kotah.ru/local/clodding_train.avi) contains the footage of the outcome of a clodding machine. It grinds the soil or rocks and turns them into equally-sized clods, which are passed to the next step in the production chain. When the clodding machine malfunctions, it produces abnormally big clods which may damage the next machine and disable the entire chain.  
+Your task is to implement an online diagnostic system based on Computer Vision.  The customer wants the system to 
+1) Detect abnormal clods 
+2) Estimate the number of them in each frame
+3) Estimate the size of the biggest one in the frame. 
 
 Here you can see a fragment of the video with tracking processed by the system:
-![](outputs/2024-04-21 19-14-53.gif)
+![demo_gif](2024-04-21 19-14-53.gif?raw=true)
 
 ## Models
 
