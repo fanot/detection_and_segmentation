@@ -8,7 +8,7 @@ Here you can see a fragment of the video with tracking processed by the system:
 
 ## Models
 
-The project uses two types of models: [Ultralytics YOLOv8](https://ultralytics.com/yolov8 ) (fully operational) and [U-Net](https://arxiv.org/abs/1505.04597) (the model was implemented from scratch, training and predicting methods are still in development)
+The project uses two types of models: [Ultralytics YOLOv8](https://ultralytics.com/yolov8 ) (fully operational with tracking) and [U-Net](the model was implemented from scratch)
 
 ##  Installation
  Run following command in shell:\
