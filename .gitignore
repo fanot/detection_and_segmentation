@@ -36,7 +36,9 @@ MANIFEST
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
-
+.idea
+logs.log
+datasets
 # Unit test / coverage reports
 htmlcov/
 .tox/
