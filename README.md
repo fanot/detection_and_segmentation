@@ -8,7 +8,7 @@ Your task is to implement an online diagnostic system based on Computer Vision. 
 3) Estimate the size of the biggest one in the frame. 
 
 Here you can see a fragment of the video with tracking processed by the system:
-![demo_gif](example.gif)
+![](example.gif)
 
 ## Models
 
